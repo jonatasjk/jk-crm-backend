@@ -14,7 +14,7 @@ import { resend } from '../config/aws.js';
 import { env } from '../config/env.js';
 import { EmailStatus, ActivityType } from '../types/enums.js';
 
-async function processEnrollment(enrollmentId: string): Promise<void> {
+export async function processEnrollment(enrollmentId: string): Promise<void> {
   const enrollment = await Enrollment.findById(enrollmentId);
   if (!enrollment || enrollment.status !== 'ACTIVE') return;
 
@@ -147,7 +147,7 @@ async function processEnrollment(enrollmentId: string): Promise<void> {
   await enrollment.save();
 }
 
-async function runSchedulerTick(): Promise<void> {
+export async function runSchedulerTick(): Promise<void> {
   // Daily cap: max 100 emails per calendar day (sequences + individual sends)
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
