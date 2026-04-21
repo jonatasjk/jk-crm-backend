@@ -46,7 +46,7 @@ export async function sendEmail(input: SendEmailInput) {
   const subject = interpolate(input.subject);
   const body    = interpolate(input.body);
 
-  // Fetch material buffers from S3
+  // Fetch material buffers from local directory
   const attachments: { name: string; buffer: Buffer; mimeType: string }[] = [];
   const attachmentDocs: { materialId: string; materialName: string }[] = [];
   for (const materialId of input.materialIds) {

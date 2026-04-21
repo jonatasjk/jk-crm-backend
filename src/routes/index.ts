@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { authenticate } from '../middleware/auth.middleware.js';
+import { authenticate, requireAdmin } from '../middleware/auth.middleware.js';
 import * as authController from '../controllers/auth.controller.js';
 import * as investorController from '../controllers/investor.controller.js';
 import * as partnerController from '../controllers/partner.controller.js';
@@ -9,12 +9,22 @@ import * as sequenceController from '../controllers/sequence.controller.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   // ─── Auth (public) ───────────────────────────────────────────────────
-  app.post('/auth/register', authController.register);
   app.post('/auth/login', authController.login);
-  app.get('/auth/me', { preHandler: [authenticate] }, authController.me);
-  app.post('/auth/change-password', { preHandler: [authenticate] }, authController.changePasswordHandler);
   app.post('/auth/forgot-password', authController.forgotPassword);
   app.post('/auth/reset-password', authController.resetPassword);
+  app.get('/auth/verify-invite', authController.verifyInvite);
+  app.post('/auth/accept-invite', authController.acceptInviteHandler);
+
+  // ─── Auth (authenticated) ─────────────────────────────────────────────
+  app.get('/auth/me', { preHandler: [authenticate] }, authController.me);
+  app.post('/auth/change-password', { preHandler: [authenticate] }, authController.changePasswordHandler);
+
+  // ─── Auth (admin) ─────────────────────────────────────────────────────
+  app.post('/auth/invite', { preHandler: [authenticate, requireAdmin] }, authController.invite);
+
+  // ─── Users (admin) ───────────────────────────────────────────────────
+  app.get('/users', { preHandler: [authenticate, requireAdmin] }, authController.listUsers);
+  app.delete<{ Params: { id: string } }>('/users/:id', { preHandler: [authenticate, requireAdmin] }, authController.deleteUser);
 
   // ─── Investors ───────────────────────────────────────────────────────
   app.get('/investors', { preHandler: [authenticate] }, investorController.list);

@@ -1,6 +1,6 @@
 # JK CRM Backend
 
-RESTful API backend for a CRM platform that manages investors and partners, sends transactional and sequence emails via [Resend](https://resend.com), handles file materials via AWS S3, and processes Resend webhook events.
+RESTful API backend for a CRM platform that manages investors and partners, sends transactional and sequence emails via [Resend](https://resend.com), handles file materials in local directory, and processes Resend webhook events.
 
 ## Tech Stack
 
@@ -11,7 +11,7 @@ RESTful API backend for a CRM platform that manages investors and partners, send
 | Language | TypeScript |
 | Database | MongoDB via Mongoose |
 | Email | Resend |
-| File storage | AWS S3 |
+| File storage | Local directory |
 | Auth | JWT (`@fastify/jwt`) |
 | Validation | Zod |
 | Container | Docker (multi-stage) |
@@ -39,7 +39,6 @@ src/
 - Node.js ≥ 20
 - MongoDB instance
 - Resend account + webhook secret
-- AWS S3 bucket (for material uploads)
 
 ### Environment Variables
 
@@ -130,7 +129,7 @@ All routes below are prefixed with `/api/v1`. Routes marked 🔒 require a `Bear
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/materials/upload` | 🔒 | Upload a file to S3 (max 25 MB) |
+| POST | `/materials/upload` | 🔒 | Upload a file to a specific local directory (max 25 MB) |
 | GET | `/materials` | 🔒 | List materials |
 | GET | `/materials/:id/download` | 🔒 | Generate a download URL |
 | DELETE | `/materials/:id` | 🔒 | Delete material |

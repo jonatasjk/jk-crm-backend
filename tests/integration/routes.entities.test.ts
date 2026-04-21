@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { connectTestDB, disconnectTestDB, clearTestDB } from '../helpers/db.js';
+import { connectTestDB, disconnectTestDB, clearTestDB, createAdminUser } from '../helpers/db.js';
 import { buildApp } from '../../src/app.js';
 
 vi.mock('../../src/config/aws.js', () => ({
@@ -15,11 +15,7 @@ vi.mock('../../src/config/aws.js', () => ({
 }));
 
 async function getAuthToken(app: FastifyInstance): Promise<string> {
-  await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/register',
-    payload: { email: 'admin@test.com', password: 'password123', name: 'Admin' },
-  });
+  await createAdminUser('admin@test.com', 'password123', 'Admin');
   const res = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/login',

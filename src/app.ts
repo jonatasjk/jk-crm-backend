@@ -50,11 +50,19 @@ export async function buildApp() {
     if (error.name === 'ZodError') {
       return reply.code(422).send({ error: 'Validation error', details: error.message });
     }
-    if (error.message === 'Email already registered') {
+    if (error.message === 'Email already registered' || error.message === 'A user with this email already exists') {
       return reply.code(409).send({ error: error.message });
     }
     if (error.message === 'Invalid credentials') {
       return reply.code(401).send({ error: error.message });
+    }
+    if (
+      error.message === 'Invalid or expired invitation' ||
+      error.message === 'Invitation has expired' ||
+      error.message === 'Invalid or expired reset token' ||
+      error.message === 'Reset token has expired'
+    ) {
+      return reply.code(400).send({ error: error.message });
     }
     if (error.name === 'CastError') {
       return reply.code(400).send({ error: 'Invalid ID format' });

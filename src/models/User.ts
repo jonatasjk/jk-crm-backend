@@ -6,6 +6,7 @@ export interface IUser extends Document {
   passwordHash: string;
   name: string;
   role: Role;
+  mustChangePassword: boolean;
   passwordResetToken?: string;
   passwordResetExpires?: Date;
   createdAt: Date;
@@ -18,6 +19,7 @@ const userSchema = new Schema<IUser>(
     passwordHash: { type: String, required: true },
     name: { type: String, required: true, trim: true },
     role: { type: String, enum: Object.values(Role), default: Role.MEMBER },
+    mustChangePassword: { type: Boolean, default: false },
     passwordResetToken: { type: String },
     passwordResetExpires: { type: Date },
   },

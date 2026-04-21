@@ -5,6 +5,8 @@ import {
   changePasswordSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  inviteSchema,
+  acceptInviteSchema,
 } from '../../src/schemas/auth.schema.js';
 import { createInvestorSchema, updateInvestorSchema, listInvestorsSchema } from '../../src/schemas/investor.schema.js';
 import { createPartnerSchema, updatePartnerSchema, listPartnersSchema } from '../../src/schemas/partner.schema.js';
@@ -64,6 +66,40 @@ describe('Auth schemas', () => {
     });
     it('rejects empty token', () => {
       expect(() => resetPasswordSchema.parse({ email: 'a@b.com', token: '', newPassword: 'newpassword1' })).toThrow();
+    });
+  });
+
+  describe('inviteSchema', () => {
+    it('accepts valid email with default role MEMBER', () => {
+      const result = inviteSchema.parse({ email: 'invited@test.com' });
+      expect(result.email).toBe('invited@test.com');
+      expect(result.role).toBe('MEMBER');
+    });
+    it('accepts ADMIN role', () => {
+      const result = inviteSchema.parse({ email: 'admin@test.com', role: 'ADMIN' });
+      expect(result.role).toBe('ADMIN');
+    });
+    it('rejects invalid email', () => {
+      expect(() => inviteSchema.parse({ email: 'not-an-email' })).toThrow();
+    });
+    it('rejects unknown role', () => {
+      expect(() => inviteSchema.parse({ email: 'a@b.com', role: 'SUPERUSER' })).toThrow();
+    });
+  });
+
+  describe('acceptInviteSchema', () => {
+    it('accepts valid input', () => {
+      const result = acceptInviteSchema.parse({ token: 'abc123', name: 'Alice', password: 'password123' });
+      expect(result.name).toBe('Alice');
+    });
+    it('rejects empty token', () => {
+      expect(() => acceptInviteSchema.parse({ token: '', name: 'Alice', password: 'password123' })).toThrow();
+    });
+    it('rejects short name', () => {
+      expect(() => acceptInviteSchema.parse({ token: 'tok', name: 'A', password: 'password123' })).toThrow();
+    });
+    it('rejects short password', () => {
+      expect(() => acceptInviteSchema.parse({ token: 'tok', name: 'Alice', password: '1234567' })).toThrow();
     });
   });
 });

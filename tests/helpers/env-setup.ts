@@ -13,3 +13,5 @@ process.env['FROM_NAME'] = 'Test CRM';
 process.env['FRONTEND_URL'] = 'http://localhost:5173';
 process.env['UPLOADS_DIR'] = 'uploads-test';
 process.env['PORT'] = '3099';
+process.env['SEED_ADMIN_EMAIL'] = 'seed@test.com';
+process.env['SEED_ADMIN_PASSWORD'] = 'seedpassword1';

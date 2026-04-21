@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
-import { connectTestDB, disconnectTestDB, clearTestDB } from '../helpers/db.js';
+import mongoose from 'mongoose';
+import { connectTestDB, disconnectTestDB, clearTestDB, createAdminUser } from '../helpers/db.js';
 import {
-  registerUser,
   verifyCredentials,
   changePassword,
+  inviteUser,
+  verifyInviteToken,
+  acceptInvite,
   generateResetToken,
   resetPasswordWithToken,
 } from '../../src/services/auth.service.js';
 import { User } from '../../src/models/User.js';
+import { Invitation } from '../../src/models/Invitation.js';
+import crypto from 'crypto';
 
 // Mock Resend to avoid real network calls
 vi.mock('../../src/config/aws.js', () => ({
@@ -31,40 +36,15 @@ describe('Auth service', () => {
     await clearTestDB();
   });
 
-  // ─── registerUser ──────────────────────────────────────────────────────────
-
-  describe('registerUser', () => {
-    it('creates a new user and returns safe fields', async () => {
-      const result = await registerUser({ email: 'alice@test.com', password: 'password123', name: 'Alice' });
-      expect(result.email).toBe('alice@test.com');
-      expect(result.name).toBe('Alice');
-      expect(result.id).toBeDefined();
-      expect((result as Record<string, unknown>)['passwordHash']).toBeUndefined();
-    });
-
-    it('throws when email already registered', async () => {
-      await registerUser({ email: 'dup@test.com', password: 'password123', name: 'Dup' });
-      await expect(registerUser({ email: 'dup@test.com', password: 'password123', name: 'Dup' })).rejects.toThrow(
-        'Email already registered',
-      );
-    });
-
-    it('is case-insensitive for email uniqueness', async () => {
-      await registerUser({ email: 'upper@test.com', password: 'password123', name: 'Upper' });
-      await expect(registerUser({ email: 'UPPER@test.com', password: 'password123', name: 'Upper2' })).rejects.toThrow(
-        'Email already registered',
-      );
-    });
-  });
-
   // ─── verifyCredentials ─────────────────────────────────────────────────────
 
   describe('verifyCredentials', () => {
-    it('returns user data on valid credentials', async () => {
-      await registerUser({ email: 'login@test.com', password: 'mypassword', name: 'Login User' });
+    it('returns user data including mustChangePassword on valid credentials', async () => {
+      await createAdminUser('login@test.com', 'mypassword', 'Login User');
       const result = await verifyCredentials({ email: 'login@test.com', password: 'mypassword' });
       expect(result.email).toBe('login@test.com');
       expect(result.name).toBe('Login User');
+      expect(typeof result.mustChangePassword).toBe('boolean');
     });
 
     it('throws on unknown email', async () => {
@@ -74,14 +54,14 @@ describe('Auth service', () => {
     });
 
     it('throws on wrong password', async () => {
-      await registerUser({ email: 'wrong@test.com', password: 'correctpassword', name: 'Wrong' });
+      await createAdminUser('wrong@test.com', 'correctpassword', 'Wrong');
       await expect(verifyCredentials({ email: 'wrong@test.com', password: 'badpassword' })).rejects.toThrow(
         'Invalid credentials',
       );
     });
 
     it('is case-insensitive for email', async () => {
-      await registerUser({ email: 'case@test.com', password: 'password1', name: 'Case' });
+      await createAdminUser('case@test.com', 'password1', 'Case');
       const result = await verifyCredentials({ email: 'CASE@TEST.COM', password: 'password1' });
       expect(result.email).toBe('case@test.com');
     });
@@ -90,17 +70,22 @@ describe('Auth service', () => {
   // ─── changePassword ────────────────────────────────────────────────────────
 
   describe('changePassword', () => {
-    it('updates password when current password is correct', async () => {
-      const { id } = await registerUser({ email: 'change@test.com', password: 'oldpassword', name: 'Change' });
-      await changePassword(String(id), { currentPassword: 'oldpassword', newPassword: 'newpassword1' });
-      // Verify login works with new password
+    it('updates password and clears mustChangePassword flag', async () => {
+      const { email } = await createAdminUser('change@test.com', 'oldpassword', 'Change');
+      // Set mustChangePassword to true so we can verify it gets cleared
+      await User.findOneAndUpdate({ email }, { mustChangePassword: true });
+      const user = await User.findOne({ email });
+      await changePassword(String(user!._id), { currentPassword: 'oldpassword', newPassword: 'newpassword1' });
+      const updated = await User.findOne({ email });
+      expect(updated!.mustChangePassword).toBe(false);
       const result = await verifyCredentials({ email: 'change@test.com', password: 'newpassword1' });
       expect(result.email).toBe('change@test.com');
     });
 
     it('throws when current password is wrong', async () => {
-      const { id } = await registerUser({ email: 'chgwrong@test.com', password: 'correctpw', name: 'CHG' });
-      await expect(changePassword(String(id), { currentPassword: 'wrongpw', newPassword: 'newpassword1' })).rejects.toThrow(
+      const { email } = await createAdminUser('chgwrong@test.com', 'correctpw', 'CHG');
+      const user = await User.findOne({ email });
+      await expect(changePassword(String(user!._id), { currentPassword: 'wrongpw', newPassword: 'newpassword1' })).rejects.toThrow(
         'Current password is incorrect',
       );
     });
@@ -112,11 +97,131 @@ describe('Auth service', () => {
     });
   });
 
+  // ─── inviteUser ────────────────────────────────────────────────────────────
+
+  describe('inviteUser', () => {
+    it('creates an invitation and sends email', async () => {
+      const { email: adminEmail } = await createAdminUser();
+      const adminUser = await User.findOne({ email: adminEmail });
+      await inviteUser({ email: 'invited@test.com', role: 'MEMBER' }, String(adminUser!._id));
+      const invitation = await Invitation.findOne({ email: 'invited@test.com' });
+      expect(invitation).not.toBeNull();
+      expect(invitation!.tokenHash).toBeDefined();
+    });
+
+    it('throws when a user with that email already exists', async () => {
+      const { email: adminEmail } = await createAdminUser();
+      const adminUser = await User.findOne({ email: adminEmail });
+      await expect(
+        inviteUser({ email: adminEmail, role: 'MEMBER' }, String(adminUser!._id)),
+      ).rejects.toThrow('A user with this email already exists');
+    });
+
+    it('invalidates previous pending invitations for the same email', async () => {
+      const { email: adminEmail } = await createAdminUser();
+      const adminUser = await User.findOne({ email: adminEmail });
+      await inviteUser({ email: 'reinvite@test.com', role: 'MEMBER' }, String(adminUser!._id));
+      await inviteUser({ email: 'reinvite@test.com', role: 'MEMBER' }, String(adminUser!._id));
+      const count = await Invitation.countDocuments({ email: 'reinvite@test.com', acceptedAt: { $exists: false } });
+      expect(count).toBe(1);
+    });
+  });
+
+  // ─── verifyInviteToken ─────────────────────────────────────────────────────
+
+  describe('verifyInviteToken', () => {
+    it('returns email and role for a valid token', async () => {
+      const rawToken = 'valid-token-abc';
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      await Invitation.create({
+        email: 'verify@test.com',
+        tokenHash,
+        invitedBy: new mongoose.Types.ObjectId(),
+        role: 'MEMBER',
+        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      });
+      const result = await verifyInviteToken(rawToken);
+      expect(result.email).toBe('verify@test.com');
+      expect(result.role).toBe('MEMBER');
+    });
+
+    it('throws on invalid token', async () => {
+      await expect(verifyInviteToken('nonexistent-token')).rejects.toThrow('Invalid or expired invitation');
+    });
+
+    it('throws on expired invitation', async () => {
+      const rawToken = 'expired-invite-token';
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      await Invitation.create({
+        email: 'expired-invite@test.com',
+        tokenHash,
+        invitedBy: new mongoose.Types.ObjectId(),
+        role: 'MEMBER',
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      await expect(verifyInviteToken(rawToken)).rejects.toThrow('Invitation has expired');
+    });
+  });
+
+  // ─── acceptInvite ──────────────────────────────────────────────────────────
+
+  describe('acceptInvite', () => {
+    it('creates a user from a valid invitation', async () => {
+      const rawToken = 'accept-token-abc';
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      await Invitation.create({
+        email: 'newuser@test.com',
+        tokenHash,
+        invitedBy: new mongoose.Types.ObjectId(),
+        role: 'MEMBER',
+        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      });
+      const result = await acceptInvite({ token: rawToken, name: 'New User', password: 'password123' });
+      expect(result.email).toBe('newuser@test.com');
+      expect(result.name).toBe('New User');
+      expect(result.mustChangePassword).toBe(false);
+      const user = await User.findOne({ email: 'newuser@test.com' });
+      expect(user).not.toBeNull();
+    });
+
+    it('marks the invitation as accepted', async () => {
+      const rawToken = 'accept-mark-token';
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      await Invitation.create({
+        email: 'markaccepted@test.com',
+        tokenHash,
+        invitedBy: new mongoose.Types.ObjectId(),
+        role: 'MEMBER',
+        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      });
+      await acceptInvite({ token: rawToken, name: 'Mark', password: 'password123' });
+      const inv = await Invitation.findOne({ tokenHash });
+      expect(inv!.acceptedAt).toBeDefined();
+    });
+
+    it('throws on invalid token', async () => {
+      await expect(acceptInvite({ token: 'bogus', name: 'X', password: 'password123' })).rejects.toThrow('Invalid or expired invitation');
+    });
+
+    it('throws on expired invitation', async () => {
+      const rawToken = 'expired-accept-token';
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      await Invitation.create({
+        email: 'expiredaccept@test.com',
+        tokenHash,
+        invitedBy: new mongoose.Types.ObjectId(),
+        role: 'MEMBER',
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      await expect(acceptInvite({ token: rawToken, name: 'X', password: 'password123' })).rejects.toThrow('Invitation has expired');
+    });
+  });
+
   // ─── generateResetToken ────────────────────────────────────────────────────
 
   describe('generateResetToken', () => {
     it('sets reset token on user', async () => {
-      await registerUser({ email: 'reset@test.com', password: 'password1', name: 'Reset' });
+      await createAdminUser('reset@test.com', 'password1', 'Reset');
       await generateResetToken('reset@test.com');
       const user = await User.findOne({ email: 'reset@test.com' });
       expect(user?.passwordResetToken).toBeDefined();
@@ -125,7 +230,6 @@ describe('Auth service', () => {
     });
 
     it('returns silently when email is not registered', async () => {
-      // Should not throw
       await expect(generateResetToken('notexists@test.com')).resolves.toBeUndefined();
     });
   });
@@ -134,29 +238,20 @@ describe('Auth service', () => {
 
   describe('resetPasswordWithToken', () => {
     it('resets password with valid token', async () => {
-      const { resend: mockResend } = await import('../../src/config/aws.js');
-      (mockResend.emails.send as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ data: { id: 'x' }, error: null });
-
-      await registerUser({ email: 'tok@test.com', password: 'oldpassword', name: 'Tok' });
-
-      // Manually inject a known raw token
+      await createAdminUser('tok@test.com', 'oldpassword', 'Tok');
       const rawToken = 'known-raw-token-for-testing-only';
-      const hashedToken = (await import('crypto')).createHash('sha256').update(rawToken).digest('hex');
+      const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
       await User.findOneAndUpdate(
         { email: 'tok@test.com' },
-        {
-          passwordResetToken: hashedToken,
-          passwordResetExpires: new Date(Date.now() + 60 * 60 * 1000),
-        },
+        { passwordResetToken: hashedToken, passwordResetExpires: new Date(Date.now() + 60 * 60 * 1000) },
       );
-
       await resetPasswordWithToken({ email: 'tok@test.com', token: rawToken, newPassword: 'brandnewpw1' });
       await expect(verifyCredentials({ email: 'tok@test.com', password: 'brandnewpw1' })).resolves.toBeTruthy();
     });
 
     it('throws on invalid token', async () => {
-      await registerUser({ email: 'bad-tok@test.com', password: 'oldpassword', name: 'Bad' });
-      const hashedToken = (await import('crypto')).createHash('sha256').update('real-token').digest('hex');
+      await createAdminUser('bad-tok@test.com', 'oldpassword', 'Bad');
+      const hashedToken = crypto.createHash('sha256').update('real-token').digest('hex');
       await User.findOneAndUpdate(
         { email: 'bad-tok@test.com' },
         { passwordResetToken: hashedToken, passwordResetExpires: new Date(Date.now() + 3600_000) },
@@ -167,15 +262,12 @@ describe('Auth service', () => {
     });
 
     it('throws on expired token', async () => {
-      await registerUser({ email: 'expired@test.com', password: 'oldpassword', name: 'Expired' });
+      await createAdminUser('expired@test.com', 'oldpassword', 'Expired');
       const rawToken = 'expired-token';
-      const hashedToken = (await import('crypto')).createHash('sha256').update(rawToken).digest('hex');
+      const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
       await User.findOneAndUpdate(
         { email: 'expired@test.com' },
-        {
-          passwordResetToken: hashedToken,
-          passwordResetExpires: new Date(Date.now() - 1000), // already expired
-        },
+        { passwordResetToken: hashedToken, passwordResetExpires: new Date(Date.now() - 1000) },
       );
       await expect(
         resetPasswordWithToken({ email: 'expired@test.com', token: rawToken, newPassword: 'newpassword1' }),
@@ -183,7 +275,7 @@ describe('Auth service', () => {
     });
 
     it('throws when user has no reset token', async () => {
-      await registerUser({ email: 'notok@test.com', password: 'oldpassword', name: 'NoTok' });
+      await createAdminUser('notok@test.com', 'oldpassword', 'NoTok');
       await expect(
         resetPasswordWithToken({ email: 'notok@test.com', token: 'sometoken', newPassword: 'newpassword1' }),
       ).rejects.toThrow('Invalid or expired reset token');

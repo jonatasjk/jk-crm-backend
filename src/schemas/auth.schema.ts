@@ -26,8 +26,21 @@ export const resetPasswordSchema = z.object({
   newPassword: z.string().min(8),
 });
 
+export const inviteSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(['ADMIN', 'MEMBER']).default('MEMBER'),
+});
+
+export const acceptInviteSchema = z.object({
+  token: z.string().min(1),
+  name: z.string().min(2),
+  password: z.string().min(8),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type InviteInput = z.infer<typeof inviteSchema>;
+export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
