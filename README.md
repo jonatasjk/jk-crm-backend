@@ -1,4 +1,8 @@
-# JK CRM Backend
+# JK CRM - Backend
+
+<p align="center">
+  <img src="docs/images/chief-delivery-officer.png" alt="Chief Delivery Officer" width="160" />
+</p>
 
 RESTful API backend for a CRM platform that manages investors and partners, sends transactional and sequence emails via [Resend](https://resend.com), handles file materials in local directory, and processes Resend webhook events.
 
@@ -161,4 +165,4 @@ A built-in scheduler fires every minute and processes one enrollment per tick. I
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
