@@ -50,6 +50,9 @@ export async function buildApp() {
     if (error.name === 'ZodError') {
       return reply.code(422).send({ error: 'Validation error', details: error.message });
     }
+    if (error.message === 'Daily email limit of 100 reached') {
+      return reply.code(429).send({ error: error.message });
+    }
     if (error.message === 'Email already registered' || error.message === 'A user with this email already exists') {
       return reply.code(409).send({ error: error.message });
     }

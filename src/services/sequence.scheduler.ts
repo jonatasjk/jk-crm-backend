@@ -74,9 +74,36 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
   if (step.materialId) {
     const material = await Material.findById(step.materialId);
     if (material) {
-      const { buffer, mimeType } = await getMaterialBuffer(material.fileKey);
-      attachments.push({ name: material.name, buffer, mimeType });
       attachmentDocs.push({ materialId: String(material._id), materialName: material.name });
+      try {
+        const { buffer, mimeType } = await getMaterialBuffer(material.fileKey);
+        attachments.push({ name: material.name, buffer, mimeType });
+      } catch {
+        // Material file missing from disk — do NOT send the email.
+        // Record one FILE_MISSING log (skip if one already exists for this step)
+        // so the UI surfaces the error, then leave the enrollment untouched so
+        // it retries automatically when the file becomes available again.
+        const alreadyFlagged = await EmailLog.findOne({
+          enrollmentId: enrollment._id,
+          stepIndex: enrollment.currentStepIndex,
+          status: EmailStatus.FILE_MISSING,
+        });
+        if (!alreadyFlagged) {
+          await EmailLog.create({
+            subject,
+            body: bodyHtml,
+            status: EmailStatus.FILE_MISSING,
+            errorMessage: `Material file not found: "${material.name}" (key: ${material.fileKey}). The email will be retried automatically once the file is available.`,
+            enrollmentId: enrollment._id,
+            stepIndex: enrollment.currentStepIndex,
+            attachments: attachmentDocs,
+            ...(enrollment.entityType === 'INVESTOR'
+              ? { investorId: enrollment.entityId }
+              : { partnerId: enrollment.entityId }),
+          });
+        }
+        return;
+      }
     }
   }
 
@@ -88,6 +115,8 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
     ...(enrollment.entityType === 'INVESTOR'
       ? { investorId: enrollment.entityId }
       : { partnerId: enrollment.entityId }),
+    enrollmentId: enrollment._id,
+    stepIndex: enrollment.currentStepIndex,
     attachments: attachmentDocs,
   });
 
@@ -173,9 +202,8 @@ export async function runSchedulerTick(): Promise<void> {
 const INTERVAL_MS = 60 * 1000; // 1 minute — max 1 email/min, 100/day
 
 export function startSequenceScheduler(): void {
-  // Run once immediately, then every 5 minutes
   setTimeout(() => {
-    void runSchedulerTick();
-    setInterval(() => { void runSchedulerTick(); }, INTERVAL_MS);
+    runSchedulerTick().catch(console.error);
+    setInterval(() => { runSchedulerTick().catch(console.error); }, INTERVAL_MS);
   }, 10_000); // slight delay to let server fully start
 }

@@ -9,9 +9,12 @@ export interface IEmailAttachment {
 export interface IEmailLog extends Document {
   investorId?: Types.ObjectId;
   partnerId?: Types.ObjectId;
+  enrollmentId?: Types.ObjectId;
+  stepIndex?: number;
   subject: string;
   body: string;
   status: EmailStatus;
+  errorMessage?: string;
   sesMessageId?: string;
   sentAt?: Date;
   attachments: IEmailAttachment[];
@@ -23,9 +26,12 @@ const emailLogSchema = new Schema<IEmailLog>(
   {
     investorId: { type: Schema.Types.ObjectId, ref: 'Investor' },
     partnerId: { type: Schema.Types.ObjectId, ref: 'Partner' },
+    enrollmentId: { type: Schema.Types.ObjectId, ref: 'Enrollment' },
+    stepIndex: { type: Number },
     subject: { type: String, required: true },
     body: { type: String, required: true },
     status: { type: String, enum: Object.values(EmailStatus), default: EmailStatus.PENDING },
+    errorMessage: { type: String },
     sesMessageId: { type: String },
     sentAt: { type: Date },
     attachments: [

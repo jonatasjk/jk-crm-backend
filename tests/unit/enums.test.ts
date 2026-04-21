@@ -47,13 +47,14 @@ describe('Enums', () => {
     expect(statuses).toContain('PENDING');
     expect(statuses).toContain('SENT');
     expect(statuses).toContain('FAILED');
+    expect(statuses).toContain('FILE_MISSING');
     expect(statuses).toContain('DELIVERED');
     expect(statuses).toContain('BOUNCED');
     expect(statuses).toContain('COMPLAINED');
     expect(statuses).toContain('OPENED');
     expect(statuses).toContain('CLICKED');
     expect(statuses).toContain('DELIVERY_DELAYED');
-    expect(statuses).toHaveLength(9);
+    expect(statuses).toHaveLength(10);
   });
 
   it('ActivityType has all expected values', () => {

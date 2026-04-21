@@ -10,6 +10,7 @@ import { Sequence } from '../../src/models/Sequence.js';
 import { Investor } from '../../src/models/Investor.js';
 import { Partner } from '../../src/models/Partner.js';
 import { EmailLog } from '../../src/models/EmailLog.js';
+import { Material } from '../../src/models/Material.js';
 import { Activity } from '../../src/models/Activity.js';
 import { EmailStatus } from '../../src/types/enums.js';
 
@@ -226,6 +227,60 @@ describe('processEnrollment', () => {
 
     const log = await EmailLog.findOne({});
     expect(log!.status).toBe(EmailStatus.FAILED);
+  });
+
+  it('creates a FILE_MISSING log and does not send or advance when material file is missing', async () => {
+    const { getMaterialBuffer } = await import('../../src/services/material.service.js');
+    vi.mocked(getMaterialBuffer).mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
+
+    const material = await Material.create({
+      name: 'Deck.pdf', fileKey: 'investor/deck.pdf',
+      mimeType: 'application/pdf', sizeBytes: 1024, entityType: 'INVESTOR',
+    });
+    const { enrollment } = await createInvestorWithSequence({
+      steps: [{ order: 1, subject: 'Step 1', bodyHtml: '<p>Hi</p>', delayDays: 0, materialId: String(material._id) }],
+    });
+
+    const { resend } = await import('../../src/config/aws.js');
+    vi.mocked(resend.emails.send).mockClear();
+
+    await processEnrollment(String(enrollment._id));
+
+    // Enrollment must NOT advance
+    const updated = await Enrollment.findById(enrollment._id);
+    expect(updated!.currentStepIndex).toBe(0);
+    expect(updated!.stepsLog).toHaveLength(0);
+
+    // A single FILE_MISSING log must be created with a descriptive message
+    const log = await EmailLog.findOne({ status: EmailStatus.FILE_MISSING });
+    expect(log).not.toBeNull();
+    expect(log!.errorMessage).toContain('Deck.pdf');
+
+    // No actual email must have been sent
+    expect(vi.mocked(resend.emails.send)).not.toHaveBeenCalled();
+  });
+
+  it('does not create duplicate FILE_MISSING logs when retrying the same step', async () => {
+    const { getMaterialBuffer } = await import('../../src/services/material.service.js');
+    vi.mocked(getMaterialBuffer).mockRejectedValue(new Error('ENOENT: no such file or directory'));
+
+    const material = await Material.create({
+      name: 'Deck.pdf', fileKey: 'investor/deck.pdf',
+      mimeType: 'application/pdf', sizeBytes: 1024, entityType: 'INVESTOR',
+    });
+    const { enrollment } = await createInvestorWithSequence({
+      steps: [{ order: 1, subject: 'Step 1', bodyHtml: '<p>Hi</p>', delayDays: 0, materialId: String(material._id) }],
+    });
+
+    // Simulate two scheduler ticks while the file is still missing
+    await processEnrollment(String(enrollment._id));
+    await processEnrollment(String(enrollment._id));
+
+    // Only one FILE_MISSING log must exist — no duplicates
+    expect(await EmailLog.countDocuments({ status: EmailStatus.FILE_MISSING })).toBe(1);
+
+    // Reset mock back to success for subsequent tests
+    vi.mocked(getMaterialBuffer).mockResolvedValue({ buffer: Buffer.from('pdf'), mimeType: 'application/pdf' });
   });
 });
 
