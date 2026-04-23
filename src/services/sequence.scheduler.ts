@@ -184,22 +184,25 @@ export async function runSchedulerTick(): Promise<void> {
     status: EmailStatus.SENT,
     sentAt: { $gte: startOfDay },
   });
-  if (sentToday >= 100) return;
+  const remaining = 100 - sentToday;
+  if (remaining <= 0) return;
 
-  // Process 1 enrollment per tick (rate: 1/minute)
-  const due = await Enrollment.findOne({
+  // Process all due enrollments per tick, oldest-due first, up to the remaining daily cap
+  const dueEnrollments = await Enrollment.find({
     status: 'ACTIVE',
     nextSendAt: { $lte: new Date() },
   })
     .select('_id')
+    .sort({ nextSendAt: 1 })
+    .limit(remaining)
     .lean();
 
-  if (!due) return;
-
-  await processEnrollment(String(due._id));
+  for (const enrollment of dueEnrollments) {
+    await processEnrollment(String(enrollment._id));
+  }
 }
 
-const INTERVAL_MS = 60 * 1000; // 1 minute — max 1 email/min, 100/day
+const INTERVAL_MS = 60 * 1000; // check every minute
 
 export function startSequenceScheduler(): void {
   setTimeout(() => {

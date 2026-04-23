@@ -70,6 +70,11 @@ web_modules/
 .env.*
 !.env.example
 
+# Uploaded files (stored in Docker volume in production)
+uploads/
+materials/
+Users/
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
