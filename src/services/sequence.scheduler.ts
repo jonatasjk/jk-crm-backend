@@ -88,6 +88,7 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
           stepIndex: enrollment.currentStepIndex,
           status: EmailStatus.FILE_MISSING,
         });
+        console.warn(`[scheduler] FILE_MISSING enrollment=${enrollmentId} step=${enrollment.currentStepIndex} material="${material.name}" key=${material.fileKey}`);
         if (!alreadyFlagged) {
           await EmailLog.create({
             subject,
@@ -137,7 +138,9 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
       sesMessageId: data?.id,
       sentAt: new Date(),
     });
-  } catch {
+    console.info(`[scheduler] SENT enrollment=${enrollmentId} step=${enrollment.currentStepIndex} to=${toEmail}`);
+  } catch (err) {
+    console.error(`[scheduler] FAILED enrollment=${enrollmentId} step=${enrollment.currentStepIndex}`, err);
     await EmailLog.findByIdAndUpdate(emailLog._id, { status: EmailStatus.FAILED });
     // Don't advance on failure — will retry next cycle
     return;
@@ -185,7 +188,10 @@ export async function runSchedulerTick(): Promise<void> {
     sentAt: { $gte: startOfDay },
   });
   const remaining = 100 - sentToday;
-  if (remaining <= 0) return;
+  if (remaining <= 0) {
+    console.info('[scheduler] daily cap of 100 emails reached — skipping tick');
+    return;
+  }
 
   // Process all due enrollments per tick, oldest-due first, up to the remaining daily cap
   const dueEnrollments = await Enrollment.find({
@@ -197,6 +203,10 @@ export async function runSchedulerTick(): Promise<void> {
     .limit(remaining)
     .lean();
 
+  if (dueEnrollments.length === 0) return; // nothing due — silent skip
+
+  console.info(`[scheduler] processing ${dueEnrollments.length} due enrollment(s)`);
+
   for (const enrollment of dueEnrollments) {
     await processEnrollment(String(enrollment._id));
   }
@@ -205,8 +215,9 @@ export async function runSchedulerTick(): Promise<void> {
 const INTERVAL_MS = 60 * 1000; // check every minute
 
 export function startSequenceScheduler(): void {
+  console.info('[scheduler] starting — first tick in 10 s, then every 60 s');
   setTimeout(() => {
     runSchedulerTick().catch(console.error);
     setInterval(() => { runSchedulerTick().catch(console.error); }, INTERVAL_MS);
-  }, 10_000); // slight delay to let server fully start
+  }, 10_000);
 }
