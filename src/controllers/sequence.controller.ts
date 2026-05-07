@@ -118,5 +118,7 @@ export async function enrollAll(
   req: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply,
 ) {
-  return reply.code(201).send(await enrollAllService(req.params.id));
+  const body = z.object({ notEnrolledInAnySequence: z.boolean().optional().default(false) })
+    .parse(req.body ?? {});
+  return reply.code(201).send(await enrollAllService(req.params.id, body));
 }

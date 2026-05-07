@@ -26,6 +26,7 @@ export const listPartnersSchema = z.object({
   search: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(500).default(50),
+  notEnrolledInAnySequence: z.coerce.boolean().optional().default(false),
 });
 
 export type CreatePartnerInput = z.infer<typeof createPartnerSchema>;

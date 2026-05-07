@@ -180,17 +180,26 @@ export async function listEnrollments(sequenceId: string) {
   });
 }
 
-export async function enrollAll(sequenceId: string): Promise<{ enrolled: number; skipped: number }> {
+export async function enrollAll(
+  sequenceId: string,
+  options: { notEnrolledInAnySequence?: boolean } = {},
+): Promise<{ enrolled: number; skipped: number }> {
   const sequence = await Sequence.findById(sequenceId);
   if (!sequence) throw new Error('Sequence not found');
   if (!sequence.steps.length) throw new Error('Sequence has no steps');
 
   const existing = await Enrollment.find({ sequenceId }).select('entityId').lean();
-  const enrolledSet = new Set(existing.map((e) => String(e.entityId)));
+  const enrolledInThisSequence = new Set(existing.map((e) => String(e.entityId)));
+
+  let excludedIds = enrolledInThisSequence;
+  if (options.notEnrolledInAnySequence) {
+    const enrolledAnywhere = await Enrollment.distinct('entityId', { entityType: sequence.entityType, status: { $ne: 'UNSUBSCRIBED' } });
+    excludedIds = new Set(enrolledAnywhere.map(String));
+  }
 
   const Model = sequence.entityType === EntityType.INVESTOR ? Investor : Partner;
   const all = await Model.find().select('_id').lean();
-  const unenrolled = all.filter((e) => !enrolledSet.has(String(e._id)));
+  const unenrolled = all.filter((e) => !excludedIds.has(String(e._id)));
 
   const firstStep = sequence.steps.slice().sort((a, b) => a.order - b.order)[0]!;
 
@@ -207,5 +216,5 @@ export async function enrollAll(sequenceId: string): Promise<{ enrolled: number;
     });
   }
 
-  return { enrolled: unenrolled.length, skipped: enrolledSet.size };
+  return { enrolled: unenrolled.length, skipped: enrolledInThisSequence.size };
 }

@@ -9,8 +9,10 @@ import {
   importInvestors,
 } from '../../src/services/investor.service.js';
 import { Investor } from '../../src/models/Investor.js';
+import { Enrollment } from '../../src/models/Enrollment.js';
+import { Sequence } from '../../src/models/Sequence.js';
 import { Activity } from '../../src/models/Activity.js';
-import { InvestorStage } from '../../src/types/enums.js';
+import { InvestorStage, EntityType } from '../../src/types/enums.js';
 
 describe('Investor service', () => {
   beforeAll(async () => {
@@ -90,6 +92,60 @@ describe('Investor service', () => {
       const result = await listInvestors({ page: 2, limit: 3 });
       expect(result.data).toHaveLength(2);
       expect(result.page).toBe(2);
+    });
+
+    it('filters out investors enrolled in any sequence when notEnrolledInAnySequence=true', async () => {
+      const inv1 = await createInvestor(baseInvestor);
+      await createInvestor({ ...baseInvestor, email: 'bob@example.com', firstName: 'Bob' });
+
+      // Enroll inv1 in a sequence (ACTIVE status = enrolled)
+      const seq = await Sequence.create({ name: 'Seq', entityType: EntityType.INVESTOR, status: 'DRAFT', steps: [] });
+      await Enrollment.create({
+        sequenceId: seq._id,
+        entityId: inv1._id,
+        entityType: 'INVESTOR',
+        status: 'ACTIVE',
+        currentStepIndex: 0,
+        nextSendAt: new Date(),
+        enrolledAt: new Date(),
+      });
+
+      const result = await listInvestors({ notEnrolledInAnySequence: true, page: 1, limit: 10 });
+      expect(result.total).toBe(1);
+      expect(result.data[0]!['email']).toBe('bob@example.com');
+    });
+
+    it('includes UNSUBSCRIBED investors when notEnrolledInAnySequence=true', async () => {
+      const inv1 = await createInvestor(baseInvestor);
+      const inv2 = await createInvestor({ ...baseInvestor, email: 'bob@example.com', firstName: 'Bob' });
+
+      const seq = await Sequence.create({ name: 'Seq', entityType: EntityType.INVESTOR, status: 'DRAFT', steps: [] });
+
+      // inv1 ACTIVE (truly enrolled), inv2 UNSUBSCRIBED (treated as not enrolled)
+      await Enrollment.create({
+        sequenceId: seq._id, entityId: inv1._id, entityType: 'INVESTOR',
+        status: 'ACTIVE', currentStepIndex: 0, nextSendAt: new Date(), enrolledAt: new Date(),
+      });
+      await Enrollment.create({
+        sequenceId: seq._id, entityId: inv2._id, entityType: 'INVESTOR',
+        status: 'UNSUBSCRIBED', currentStepIndex: 0, nextSendAt: new Date(), enrolledAt: new Date(),
+      });
+
+      const result = await listInvestors({ notEnrolledInAnySequence: true, page: 1, limit: 10 });
+      expect(result.total).toBe(1);
+      expect(result.data[0]!['email']).toBe('bob@example.com');
+    });
+
+    it('returns all investors when notEnrolledInAnySequence=false', async () => {
+      const inv = await createInvestor(baseInvestor);
+      const seq = await Sequence.create({ name: 'Seq', entityType: EntityType.INVESTOR, status: 'DRAFT', steps: [] });
+      await Enrollment.create({
+        sequenceId: seq._id, entityId: inv._id, entityType: 'INVESTOR',
+        status: 'ACTIVE', currentStepIndex: 0, nextSendAt: new Date(), enrolledAt: new Date(),
+      });
+
+      const result = await listInvestors({ notEnrolledInAnySequence: false, page: 1, limit: 10 });
+      expect(result.total).toBe(1);
     });
   });
 

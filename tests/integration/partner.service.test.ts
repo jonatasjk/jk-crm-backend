@@ -9,8 +9,10 @@ import {
   importPartners,
 } from '../../src/services/partner.service.js';
 import { Partner } from '../../src/models/Partner.js';
+import { Enrollment } from '../../src/models/Enrollment.js';
+import { Sequence } from '../../src/models/Sequence.js';
 import { Activity } from '../../src/models/Activity.js';
-import { PartnerStage } from '../../src/types/enums.js';
+import { PartnerStage, EntityType } from '../../src/types/enums.js';
 
 describe('Partner service', () => {
   beforeAll(async () => {
@@ -75,6 +77,40 @@ describe('Partner service', () => {
       // createPartner logs one CREATED activity, emailLogs are always 0
       expect(result.data[0]!['_count']).toMatchObject({ emailLogs: 0 });
       expect((result.data[0]!['_count'] as { activities: number }).activities).toBeGreaterThanOrEqual(0);
+    });
+
+    it('filters out partners enrolled in any sequence when notEnrolledInAnySequence=true', async () => {
+      const par1 = await createPartner(basePartner);
+      await createPartner({ ...basePartner, email: 'eve@partner.com', firstName: 'Eve' });
+
+      const seq = await Sequence.create({ name: 'Seq', entityType: EntityType.PARTNER, status: 'DRAFT', steps: [] });
+      await Enrollment.create({
+        sequenceId: seq._id, entityId: par1._id, entityType: 'PARTNER',
+        status: 'ACTIVE', currentStepIndex: 0, nextSendAt: new Date(), enrolledAt: new Date(),
+      });
+
+      const result = await listPartners({ notEnrolledInAnySequence: true, page: 1, limit: 10 });
+      expect(result.total).toBe(1);
+      expect(result.data[0]!['email']).toBe('eve@partner.com');
+    });
+
+    it('includes UNSUBSCRIBED partners when notEnrolledInAnySequence=true', async () => {
+      const par1 = await createPartner(basePartner);
+      const par2 = await createPartner({ ...basePartner, email: 'eve@partner.com', firstName: 'Eve' });
+
+      const seq = await Sequence.create({ name: 'Seq', entityType: EntityType.PARTNER, status: 'DRAFT', steps: [] });
+      await Enrollment.create({
+        sequenceId: seq._id, entityId: par1._id, entityType: 'PARTNER',
+        status: 'ACTIVE', currentStepIndex: 0, nextSendAt: new Date(), enrolledAt: new Date(),
+      });
+      await Enrollment.create({
+        sequenceId: seq._id, entityId: par2._id, entityType: 'PARTNER',
+        status: 'UNSUBSCRIBED', currentStepIndex: 0, nextSendAt: new Date(), enrolledAt: new Date(),
+      });
+
+      const result = await listPartners({ notEnrolledInAnySequence: true, page: 1, limit: 10 });
+      expect(result.total).toBe(1);
+      expect(result.data[0]!['email']).toBe('eve@partner.com');
     });
   });
 

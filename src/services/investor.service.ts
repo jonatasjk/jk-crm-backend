@@ -1,10 +1,11 @@
 import { Investor } from '../models/Investor.js';
+import { Enrollment } from '../models/Enrollment.js';
 import { Activity } from '../models/Activity.js';
 import type { CreateInvestorInput, UpdateInvestorInput, ListInvestorsInput } from '../schemas/investor.schema.js';
 import { ActivityType } from '../types/enums.js';
 
 export async function listInvestors(query: ListInvestorsInput) {
-  const { stage, search, page, limit } = query;
+  const { stage, search, page, limit, notEnrolledInAnySequence } = query;
   const skip = (page - 1) * limit;
 
   const filter: Record<string, unknown> = {};
@@ -12,6 +13,10 @@ export async function listInvestors(query: ListInvestorsInput) {
   if (search) {
     const re = new RegExp(search, 'i');
     filter['$or'] = [{ firstName: re }, { lastName: re }, { email: re }, { company: re }];
+  }
+  if (notEnrolledInAnySequence) {
+    const enrolledIds = await Enrollment.distinct('entityId', { entityType: 'INVESTOR', status: { $ne: 'UNSUBSCRIBED' } });
+    filter['_id'] = { $nin: enrolledIds };
   }
 
   const [items, total] = await Promise.all([

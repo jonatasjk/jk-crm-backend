@@ -271,5 +271,49 @@ describe('Sequence service', () => {
       const empty = await createSequence(baseSeqInput);
       await expect(enrollAll(empty.id as string)).rejects.toThrow('Sequence has no steps');
     });
+
+    it('with notEnrolledInAnySequence=true, skips investors enrolled in a different sequence', async () => {
+      const seq1 = await createSeqWithStep();
+      const seq2 = await createSeqWithStep();
+      const inv1 = await createInvestor('cross1@test.com');
+      const inv2 = await createInvestor('cross2@test.com');
+
+      // Enroll inv1 in seq2 (a different sequence)
+      await enrollEntity(String(seq2._id), String(inv1._id));
+
+      const result = await enrollAll(String(seq1._id), { notEnrolledInAnySequence: true });
+      expect(result.enrolled).toBe(1);
+      const enrollments = await Enrollment.find({ sequenceId: seq1._id });
+      const enrolledId = String(enrollments[0]!.entityId);
+      expect(enrolledId).toBe(String(inv2._id));
+    });
+
+    it('with notEnrolledInAnySequence=true, includes UNSUBSCRIBED investors', async () => {
+      const seq1 = await createSeqWithStep();
+      const seq2 = await createSeqWithStep();
+      const inv1 = await createInvestor('unsub1@test.com');
+      await createInvestor('unsub2@test.com');
+
+      // Enroll inv1 in seq2 then unenroll (UNSUBSCRIBED)
+      const enrollment = await enrollEntity(String(seq2._id), String(inv1._id));
+      await unenrollEntity(enrollment.id as string);
+
+      // Both investors should be eligible: inv1 is UNSUBSCRIBED (treated as not enrolled)
+      const result = await enrollAll(String(seq1._id), { notEnrolledInAnySequence: true });
+      expect(result.enrolled).toBe(2);
+    });
+
+    it('without notEnrolledInAnySequence, only skips investors in this specific sequence', async () => {
+      const seq1 = await createSeqWithStep();
+      const seq2 = await createSeqWithStep();
+      const inv = await createInvestor('crossseq@test.com');
+
+      // Enroll in seq2 only
+      await enrollEntity(String(seq2._id), String(inv._id));
+
+      // Without the flag, seq1 should still enroll inv
+      const result = await enrollAll(String(seq1._id));
+      expect(result.enrolled).toBe(1);
+    });
   });
 });

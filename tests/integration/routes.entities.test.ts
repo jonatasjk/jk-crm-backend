@@ -114,6 +114,25 @@ describe('Investor routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().total).toBe(1);
   });
+
+  it('GET /investors?notEnrolledInAnySequence=true filters enrolled investors', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/investors', headers: { authorization: `Bearer ${token}` }, payload: investorPayload });
+    const invId = created.json().id;
+
+    await app.inject({ method: 'POST', url: '/api/v1/investors', headers: { authorization: `Bearer ${token}` }, payload: { firstName: 'Bob', lastName: 'Free', email: 'free@test.com' } });
+
+    // Create sequence + enroll Alice
+    const { Sequence } = await import('../../src/models/Sequence.js');
+    const { Enrollment } = await import('../../src/models/Enrollment.js');
+    const seq = await Sequence.create({ name: 'S', entityType: 'INVESTOR', status: 'DRAFT', steps: [] });
+    const { Types } = await import('mongoose');
+    await Enrollment.create({ sequenceId: seq._id, entityId: new Types.ObjectId(invId), entityType: 'INVESTOR', status: 'ACTIVE', currentStepIndex: 0, nextSendAt: new Date(), enrolledAt: new Date() });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/investors?notEnrolledInAnySequence=true', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().total).toBe(1);
+    expect(res.json().data[0].email).toBe('free@test.com');
+  });
 });
 
 // ─── Partner routes ───────────────────────────────────────────────────────────

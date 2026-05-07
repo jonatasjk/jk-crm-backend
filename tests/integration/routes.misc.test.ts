@@ -130,6 +130,33 @@ describe('Sequence routes', () => {
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.json())).toBe(true);
   });
+
+  it('POST /sequences/:id/enroll-all with notEnrolledInAnySequence=true only enrolls new contacts', async () => {
+    // Create two investors
+    const inv1Res = await app.inject({ method: 'POST', url: '/api/v1/investors', headers: { authorization: `Bearer ${token}` }, payload: { firstName: 'A', lastName: 'One', email: 'a@seq.com' } });
+    const inv1Id = inv1Res.json().id;
+    await app.inject({ method: 'POST', url: '/api/v1/investors', headers: { authorization: `Bearer ${token}` }, payload: { firstName: 'B', lastName: 'Two', email: 'b@seq.com' } });
+
+    // Create seq1 and enroll inv1
+    const seq1Res = await app.inject({ method: 'POST', url: '/api/v1/sequences', headers: { authorization: `Bearer ${token}` }, payload: { name: 'Seq1', entityType: 'INVESTOR' } });
+    const seq1Id = seq1Res.json().id;
+    await Sequence.findByIdAndUpdate(seq1Id, { steps: [{ order: 1, subject: 'Hi', bodyHtml: '<p>Hi</p>', delayDays: 0 }] });
+    await app.inject({ method: 'POST', url: `/api/v1/sequences/${seq1Id}/enroll`, headers: { authorization: `Bearer ${token}` }, payload: { entityId: inv1Id } });
+
+    // Create seq2 and enroll-all with notEnrolledInAnySequence=true → only inv2 should be enrolled
+    const seq2Res = await app.inject({ method: 'POST', url: '/api/v1/sequences', headers: { authorization: `Bearer ${token}` }, payload: { name: 'Seq2', entityType: 'INVESTOR' } });
+    const seq2Id = seq2Res.json().id;
+    await Sequence.findByIdAndUpdate(seq2Id, { steps: [{ order: 1, subject: 'Hi', bodyHtml: '<p>Hi</p>', delayDays: 0 }] });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/sequences/${seq2Id}/enroll-all`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { notEnrolledInAnySequence: true },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().enrolled).toBe(1);
+  });
 });
 
 // ─── Email routes ─────────────────────────────────────────────────────────────
