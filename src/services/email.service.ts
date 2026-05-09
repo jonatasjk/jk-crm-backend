@@ -10,14 +10,14 @@ import { Material } from '../models/Material.js';
 import type { SendEmailInput } from '../schemas/email.schema.js';
 
 export async function sendEmail(input: SendEmailInput) {
-  // Daily cap: max 100 emails per calendar day across sequences and individual sends
+  // Daily cap: max DAILY_EMAIL_LIMIT emails per calendar day across sequences and individual sends
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   const sentToday = await EmailLog.countDocuments({
     status: EmailStatus.SENT,
     sentAt: { $gte: startOfDay },
   });
-  if (sentToday >= 100) throw new Error('Daily email limit of 100 reached');
+  if (sentToday >= env.DAILY_EMAIL_LIMIT) throw new Error(`Daily email limit of ${env.DAILY_EMAIL_LIMIT} reached`);
 
   // Resolve recipient
   let toEmail: string;
