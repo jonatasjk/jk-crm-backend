@@ -180,16 +180,16 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
 }
 
 export async function runSchedulerTick(): Promise<void> {
-  // Daily cap: max 100 emails per calendar day (sequences + individual sends)
+  // Daily cap: max DAILY_EMAIL_LIMIT emails per calendar day (sequences + individual sends)
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   const sentToday = await EmailLog.countDocuments({
     status: EmailStatus.SENT,
     sentAt: { $gte: startOfDay },
   });
-  const remaining = 100 - sentToday;
+  const remaining = env.DAILY_EMAIL_LIMIT - sentToday;
   if (remaining <= 0) {
-    console.info('[scheduler] daily cap of 100 emails reached — skipping tick');
+    console.info(`[scheduler] daily cap of ${env.DAILY_EMAIL_LIMIT} emails reached — skipping tick`);
     return;
   }
 
@@ -209,6 +209,7 @@ export async function runSchedulerTick(): Promise<void> {
 
   for (const enrollment of dueEnrollments) {
     await processEnrollment(String(enrollment._id));
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
 }
 
