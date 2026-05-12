@@ -195,6 +195,45 @@ describe('Investor service', () => {
     it('throws when investor not found', async () => {
       await expect(updateInvestor('000000000000000000000000', { company: 'X' })).rejects.toThrow('Not found');
     });
+
+    it('unsubscribes active enrollments when stage moves away from PROSPECT', async () => {
+      const inv = await createInvestor(baseInvestor);
+      const seq = await Sequence.create({ name: 'Seq', entityType: EntityType.INVESTOR, status: 'DRAFT', steps: [] });
+      await Enrollment.create({
+        sequenceId: seq._id,
+        entityId: inv._id,
+        entityType: 'INVESTOR',
+        status: 'ACTIVE',
+        currentStepIndex: 0,
+        nextSendAt: new Date(),
+        enrolledAt: new Date(),
+      });
+
+      await updateInvestor(String(inv._id), { stage: InvestorStage.CONTACTED });
+
+      const enrollment = await Enrollment.findOne({ entityId: inv._id });
+      expect(enrollment?.status).toBe('UNSUBSCRIBED');
+    });
+
+    it('does NOT unsubscribe enrollments when stage stays PROSPECT', async () => {
+      const inv = await createInvestor(baseInvestor);
+      const seq = await Sequence.create({ name: 'Seq', entityType: EntityType.INVESTOR, status: 'DRAFT', steps: [] });
+      await Enrollment.create({
+        sequenceId: seq._id,
+        entityId: inv._id,
+        entityType: 'INVESTOR',
+        status: 'ACTIVE',
+        currentStepIndex: 0,
+        nextSendAt: new Date(),
+        enrolledAt: new Date(),
+      });
+
+      // Update something else (no stage change)
+      await updateInvestor(String(inv._id), { company: 'Acme' });
+
+      const enrollment = await Enrollment.findOne({ entityId: inv._id });
+      expect(enrollment?.status).toBe('ACTIVE');
+    });
   });
 
   // ─── deleteInvestor ────────────────────────────────────────────────────────

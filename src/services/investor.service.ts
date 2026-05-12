@@ -2,7 +2,7 @@ import { Investor } from '../models/Investor.js';
 import { Enrollment } from '../models/Enrollment.js';
 import { Activity } from '../models/Activity.js';
 import type { CreateInvestorInput, UpdateInvestorInput, ListInvestorsInput } from '../schemas/investor.schema.js';
-import { ActivityType } from '../types/enums.js';
+import { ActivityType, InvestorStage } from '../types/enums.js';
 
 export async function listInvestors(query: ListInvestorsInput) {
   const { stage, search, page, limit, notEnrolledInAnySequence } = query;
@@ -87,6 +87,12 @@ export async function updateInvestor(id: string, data: UpdateInvestorInput) {
       type: ActivityType.STAGE_CHANGE,
       detail: `Stage changed from ${current.stage} to ${data.stage}`,
     });
+    if (data.stage !== InvestorStage.PROSPECT) {
+      await Enrollment.updateMany(
+        { entityId: id, entityType: 'INVESTOR', status: 'ACTIVE' },
+        { status: 'UNSUBSCRIBED' },
+      );
+    }
   }
   return investor;
 }
