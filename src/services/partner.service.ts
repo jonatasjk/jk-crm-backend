@@ -2,7 +2,7 @@ import { Partner } from '../models/Partner.js';
 import { Enrollment } from '../models/Enrollment.js';
 import { Activity } from '../models/Activity.js';
 import type { CreatePartnerInput, UpdatePartnerInput, ListPartnersInput } from '../schemas/partner.schema.js';
-import { ActivityType } from '../types/enums.js';
+import { ActivityType, PartnerStage } from '../types/enums.js';
 
 export async function listPartners(query: ListPartnersInput) {
   const { stage, search, page, limit, notEnrolledInAnySequence } = query;
@@ -87,6 +87,12 @@ export async function updatePartner(id: string, data: UpdatePartnerInput) {
       type: ActivityType.STAGE_CHANGE,
       detail: `Stage changed from ${current.stage} to ${data.stage}`,
     });
+    if (data.stage !== PartnerStage.LEAD) {
+      await Enrollment.updateMany(
+        { entityId: id, entityType: 'PARTNER', status: 'ACTIVE' },
+        { status: 'UNSUBSCRIBED' },
+      );
+    }
   }
   return partner;
 }
