@@ -15,8 +15,15 @@ import { env } from '../config/env.js';
 import { EmailStatus, ActivityType } from '../types/enums.js';
 
 export async function processEnrollment(enrollmentId: string): Promise<void> {
-  const enrollment = await Enrollment.findById(enrollmentId);
-  if (!enrollment || enrollment.status !== 'ACTIVE') return;
+  // Atomically claim the enrollment so concurrent scheduler ticks cannot double-send.
+  // Only succeeds if the enrollment is still ACTIVE and nextSendAt is in the past.
+  // Sets nextSendAt 1 hour ahead as a processing lock; the real value is written at the end.
+  const enrollment = await Enrollment.findOneAndUpdate(
+    { _id: enrollmentId, status: 'ACTIVE', nextSendAt: { $lte: new Date() } },
+    { $set: { nextSendAt: new Date(Date.now() + 60 * 60 * 1000) } },
+    { new: false },
+  );
+  if (!enrollment) return; // already claimed by another tick, or no longer active/due
 
   const sequence = await Sequence.findById(enrollment.sequenceId);
   if (!sequence || sequence.status !== 'ACTIVE') return;
@@ -25,8 +32,31 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
   const step = sortedSteps[enrollment.currentStepIndex];
   if (!step) return;
 
-  // Guard: this step was already sent (e.g. crash after send, before index advance)
-  // Recover by advancing the index without re-sending.
+  // Guard: check the EmailLog collection — if this step was already SENT, never send again.
+  // This is the primary idempotency check (survives crashes, concurrent ticks, etc.).
+  const sentLog = await EmailLog.findOne({
+    enrollmentId: enrollment._id,
+    stepIndex: enrollment.currentStepIndex,
+    status: EmailStatus.SENT,
+  }).lean();
+  if (sentLog) {
+    // Email was delivered but enrollment save may have crashed — recover by advancing.
+    const nextStepIndex = enrollment.currentStepIndex + 1;
+    const nextStep = sortedSteps[nextStepIndex];
+    if (!nextStep) {
+      enrollment.status = 'COMPLETED';
+      enrollment.completedAt = new Date();
+    } else {
+      enrollment.currentStepIndex = nextStepIndex;
+      const nextSend = new Date();
+      nextSend.setDate(nextSend.getDate() + nextStep.delayDays);
+      enrollment.nextSendAt = nextSend;
+    }
+    await enrollment.save();
+    return;
+  }
+
+  // Secondary guard: stepsLog embedded in enrollment (crash-recovery fallback).
   const alreadySent = enrollment.stepsLog.some((l) => l.stepIndex === enrollment.currentStepIndex);
   if (alreadySent) {
     const nextStepIndex = enrollment.currentStepIndex + 1;
@@ -108,18 +138,24 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
     }
   }
 
-  // Create email log (PENDING)
-  const emailLog = await EmailLog.create({
-    subject,
-    body: bodyHtml,
-    status: EmailStatus.PENDING,
-    ...(enrollment.entityType === 'INVESTOR'
-      ? { investorId: enrollment.entityId }
-      : { partnerId: enrollment.entityId }),
-    enrollmentId: enrollment._id,
-    stepIndex: enrollment.currentStepIndex,
-    attachments: attachmentDocs,
-  });
+  // Create email log (PENDING), or reuse one left over from a previous crashed attempt.
+  const emailLog =
+    (await EmailLog.findOne({
+      enrollmentId: enrollment._id,
+      stepIndex: enrollment.currentStepIndex,
+      status: EmailStatus.PENDING,
+    })) ??
+    (await EmailLog.create({
+      subject,
+      body: bodyHtml,
+      status: EmailStatus.PENDING,
+      ...(enrollment.entityType === 'INVESTOR'
+        ? { investorId: enrollment.entityId }
+        : { partnerId: enrollment.entityId }),
+      enrollmentId: enrollment._id,
+      stepIndex: enrollment.currentStepIndex,
+      attachments: attachmentDocs,
+    }));
 
   try {
     const { data, error } = await resend.emails.send({

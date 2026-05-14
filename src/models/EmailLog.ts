@@ -56,5 +56,15 @@ const emailLogSchema = new Schema<IEmailLog>(
 
 emailLogSchema.index({ investorId: 1 });
 emailLogSchema.index({ partnerId: 1 });
+// Prevent duplicate email logs for the same enrollment step.
+// partialFilterExpression limits the unique constraint to sequence emails only
+// (enrollmentId + stepIndex are both set), leaving ad-hoc sends unrestricted.
+emailLogSchema.index(
+  { enrollmentId: 1, stepIndex: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { enrollmentId: { $exists: true }, stepIndex: { $exists: true } },
+  },
+);
 
 export const EmailLog = model<IEmailLog>('EmailLog', emailLogSchema);
