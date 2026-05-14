@@ -194,7 +194,7 @@ export async function enrollAll(
   let excludedIds = enrolledInThisSequence;
   if (options.notEnrolledInAnySequence) {
     const enrolledAnywhere = await Enrollment.distinct('entityId', { entityType: sequence.entityType, status: { $ne: 'UNSUBSCRIBED' } });
-    excludedIds = new Set(enrolledAnywhere.map(String));
+    excludedIds = new Set([...enrolledAnywhere.map(String), ...enrolledInThisSequence]);
   }
 
   const Model = sequence.entityType === EntityType.INVESTOR ? Investor : Partner;
