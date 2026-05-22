@@ -3,6 +3,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.middleware.js';
 import * as authController from '../controllers/auth.controller.js';
 import * as investorController from '../controllers/investor.controller.js';
 import * as partnerController from '../controllers/partner.controller.js';
+import * as customerController from '../controllers/customer.controller.js';
 import * as emailController from '../controllers/email.controller.js';
 import * as materialController from '../controllers/material.controller.js';
 import * as sequenceController from '../controllers/sequence.controller.js';
@@ -41,6 +42,14 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put<{ Params: { id: string } }>('/partners/:id', { preHandler: [authenticate] }, partnerController.update);
   app.delete<{ Params: { id: string } }>('/partners/:id', { preHandler: [authenticate] }, partnerController.remove);
   app.post('/partners/import', { preHandler: [authenticate] }, partnerController.importCsv);
+
+  // ─── Customers ───────────────────────────────────────────────────────
+  app.get('/customers', { preHandler: [authenticate] }, customerController.list);
+  app.get<{ Params: { id: string } }>('/customers/:id', { preHandler: [authenticate] }, customerController.getOne);
+  app.post('/customers', { preHandler: [authenticate] }, customerController.create);
+  app.put<{ Params: { id: string } }>('/customers/:id', { preHandler: [authenticate] }, customerController.update);
+  app.delete<{ Params: { id: string } }>('/customers/:id', { preHandler: [authenticate] }, customerController.remove);
+  app.post('/customers/import', { preHandler: [authenticate] }, customerController.importCsv);
 
   // ─── Email ───────────────────────────────────────────────────────────
   app.post('/email/send', { preHandler: [authenticate] }, emailController.send);

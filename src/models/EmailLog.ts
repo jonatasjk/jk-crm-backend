@@ -9,6 +9,7 @@ export interface IEmailAttachment {
 export interface IEmailLog extends Document {
   investorId?: Types.ObjectId;
   partnerId?: Types.ObjectId;
+  customerId?: Types.ObjectId;
   enrollmentId?: Types.ObjectId;
   stepIndex?: number;
   subject: string;
@@ -26,6 +27,7 @@ const emailLogSchema = new Schema<IEmailLog>(
   {
     investorId: { type: Schema.Types.ObjectId, ref: 'Investor' },
     partnerId: { type: Schema.Types.ObjectId, ref: 'Partner' },
+    customerId: { type: Schema.Types.ObjectId, ref: 'Customer' },
     enrollmentId: { type: Schema.Types.ObjectId, ref: 'Enrollment' },
     stepIndex: { type: Number },
     subject: { type: String, required: true },
@@ -56,6 +58,7 @@ const emailLogSchema = new Schema<IEmailLog>(
 
 emailLogSchema.index({ investorId: 1 });
 emailLogSchema.index({ partnerId: 1 });
+emailLogSchema.index({ customerId: 1 });
 // Prevent duplicate email logs for the same enrollment step.
 // partialFilterExpression limits the unique constraint to sequence emails only
 // (enrollmentId + stepIndex are both set), leaving ad-hoc sends unrestricted.

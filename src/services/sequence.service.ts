@@ -2,6 +2,7 @@ import { Sequence } from '../models/Sequence.js';
 import { Enrollment } from '../models/Enrollment.js';
 import { Investor } from '../models/Investor.js';
 import { Partner } from '../models/Partner.js';
+import { Customer } from '../models/Customer.js';
 import { EntityType } from '../types/enums.js';
 import type { ISequenceStep } from '../models/Sequence.js';
 
@@ -105,6 +106,11 @@ export async function enrollEntity(sequenceId: string, entityId: string) {
     if (!inv) throw new Error('Investor not found');
     entityEmail = inv.email;
     entityName = `${inv.firstName} ${inv.lastName}`.trim();
+  } else if (sequence.entityType === EntityType.CUSTOMER) {
+    const cust = await Customer.findById(entityId);
+    if (!cust) throw new Error('Customer not found');
+    entityEmail = cust.email;
+    entityName = `${cust.firstName} ${cust.lastName}`.trim();
   } else {
     const par = await Partner.findById(entityId);
     if (!par) throw new Error('Partner not found');
@@ -157,17 +163,23 @@ export async function listEnrollments(sequenceId: string) {
   // Batch resolve entity names
   const investorIds = enrollments.filter((e) => e.entityType === 'INVESTOR').map((e) => e.entityId);
   const partnerIds  = enrollments.filter((e) => e.entityType === 'PARTNER').map((e) => e.entityId);
+  const customerIds = enrollments.filter((e) => e.entityType === 'CUSTOMER').map((e) => e.entityId);
 
-  const [investors, partners] = await Promise.all([
+  const [investors, partners, customers] = await Promise.all([
     investorIds.length ? Investor.find({ _id: { $in: investorIds } }).select('firstName lastName email').lean() : [],
     partnerIds.length  ? Partner.find({ _id: { $in: partnerIds } }).select('firstName lastName email').lean() : [],
+    customerIds.length ? Customer.find({ _id: { $in: customerIds } }).select('firstName lastName email').lean() : [],
   ]);
 
-  const invMap = new Map(investors.map((i) => [String(i._id), i]));
-  const parMap = new Map(partners.map((p) => [String(p._id), p]));
+  const invMap  = new Map(investors.map((i) => [String(i._id), i]));
+  const parMap  = new Map(partners.map((p) => [String(p._id), p]));
+  const custMap = new Map(customers.map((c) => [String(c._id), c]));
 
   return enrollments.map((e) => {
-    const entity = e.entityType === 'INVESTOR' ? invMap.get(String(e.entityId)) : parMap.get(String(e.entityId));
+    const entity =
+      e.entityType === 'INVESTOR' ? invMap.get(String(e.entityId)) :
+      e.entityType === 'CUSTOMER' ? custMap.get(String(e.entityId)) :
+      parMap.get(String(e.entityId));
     return {
       ...e,
       id: String(e._id),
@@ -197,7 +209,7 @@ export async function enrollAll(
     excludedIds = new Set([...enrolledAnywhere.map(String), ...enrolledInThisSequence]);
   }
 
-  const Model = sequence.entityType === EntityType.INVESTOR ? Investor : Partner;
+  const Model = sequence.entityType === EntityType.INVESTOR ? Investor : sequence.entityType === EntityType.CUSTOMER ? Customer : Partner;
   const all = await Model.find().select('_id').lean();
   const unenrolled = all.filter((e) => !excludedIds.has(String(e._id)));
 

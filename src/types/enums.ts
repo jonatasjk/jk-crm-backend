@@ -25,9 +25,21 @@ export const PartnerStage = {
 } as const;
 export type PartnerStage = (typeof PartnerStage)[keyof typeof PartnerStage];
 
+export const CustomerStage = {
+  LEAD: 'LEAD',
+  QUALIFIED: 'QUALIFIED',
+  PROPOSAL: 'PROPOSAL',
+  NEGOTIATION: 'NEGOTIATION',
+  CLOSED_WON: 'CLOSED_WON',
+  CLOSED_LOST: 'CLOSED_LOST',
+  CHURNED: 'CHURNED',
+} as const;
+export type CustomerStage = (typeof CustomerStage)[keyof typeof CustomerStage];
+
 export const EntityType = {
   INVESTOR: 'INVESTOR',
   PARTNER: 'PARTNER',
+  CUSTOMER: 'CUSTOMER',
 } as const;
 export type EntityType = (typeof EntityType)[keyof typeof EntityType];
 

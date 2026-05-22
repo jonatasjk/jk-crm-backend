@@ -9,6 +9,7 @@ import { Activity } from '../models/Activity.js';
 import { Material } from '../models/Material.js';
 import { Investor } from '../models/Investor.js';
 import { Partner } from '../models/Partner.js';
+import { Customer } from '../models/Customer.js';
 import { getMaterialBuffer } from './material.service.js';
 import { resend } from '../config/aws.js';
 import { env } from '../config/env.js';
@@ -81,6 +82,10 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
     const inv = await Investor.findById(enrollment.entityId);
     if (!inv) { await Enrollment.findByIdAndUpdate(enrollmentId, { status: 'UNSUBSCRIBED' }); return; }
     toEmail = inv.email; toName = `${inv.firstName} ${inv.lastName}`.trim();
+  } else if (enrollment.entityType === 'CUSTOMER') {
+    const cust = await Customer.findById(enrollment.entityId);
+    if (!cust) { await Enrollment.findByIdAndUpdate(enrollmentId, { status: 'UNSUBSCRIBED' }); return; }
+    toEmail = cust.email; toName = `${cust.firstName} ${cust.lastName}`.trim();
   } else {
     const par = await Partner.findById(enrollment.entityId);
     if (!par) { await Enrollment.findByIdAndUpdate(enrollmentId, { status: 'UNSUBSCRIBED' }); return; }
@@ -130,7 +135,9 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
             attachments: attachmentDocs,
             ...(enrollment.entityType === 'INVESTOR'
               ? { investorId: enrollment.entityId }
-              : { partnerId: enrollment.entityId }),
+              : enrollment.entityType === 'CUSTOMER'
+                ? { customerId: enrollment.entityId }
+                : { partnerId: enrollment.entityId }),
           });
         }
         return;
@@ -151,7 +158,9 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
       status: EmailStatus.PENDING,
       ...(enrollment.entityType === 'INVESTOR'
         ? { investorId: enrollment.entityId }
-        : { partnerId: enrollment.entityId }),
+        : enrollment.entityType === 'CUSTOMER'
+          ? { customerId: enrollment.entityId }
+          : { partnerId: enrollment.entityId }),
       enrollmentId: enrollment._id,
       stepIndex: enrollment.currentStepIndex,
       attachments: attachmentDocs,
@@ -188,7 +197,9 @@ export async function processEnrollment(enrollmentId: string): Promise<void> {
     detail: `Sequence "${sequence.name}" — step ${enrollment.currentStepIndex + 1}: "${step.subject}"`,
     ...(enrollment.entityType === 'INVESTOR'
       ? { investorId: enrollment.entityId }
-      : { partnerId: enrollment.entityId }),
+      : enrollment.entityType === 'CUSTOMER'
+        ? { customerId: enrollment.entityId }
+        : { partnerId: enrollment.entityId }),
   });
 
   // Log the step
