@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseInvestorCsv, parsePartnerCsv } from '../../src/services/csv.service.js';
+import { parseInvestorCsv, parsePartnerCsv, parseCustomerCsv } from '../../src/services/csv.service.js';
 
 const investorCsv = `first_name,last_name,email,phone,company,stage,notes,tags
 Alice,Smith,alice@example.com,555-1234,Acme Inc,PROSPECT,Some notes,"tech, vc"
@@ -114,3 +114,74 @@ describe('parsePartnerCsv', () => {
     expect(rows[0]!['tags']).toEqual(['partner', 'vip', 'tech']);
   });
 });
+
+describe('parseCustomerCsv', () => {
+  it('parses standard customer CSV', () => {
+    const csv = `first_name,last_name,email,company,stage\nNia,Brooks,nia@example.com,BrooksCo,QUALIFIED\nOscar,Webb,oscar@example.com,,LEAD\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows).toHaveLength(2);
+    const nia = rows[0]!;
+    expect(nia['firstName']).toBe('Nia');
+    expect(nia['lastName']).toBe('Brooks');
+    expect(nia['email']).toBe('nia@example.com');
+    expect(nia['company']).toBe('BrooksCo');
+    expect(nia['stage']).toBe('QUALIFIED');
+  });
+
+  it('defaults to LEAD for unknown customer stage', () => {
+    const csv = `first_name,last_name,email,stage\nPat,Clay,pat@example.com,UNKNOWN_STAGE\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['stage']).toBe('LEAD');
+  });
+
+  it('uppercases valid customer stages', () => {
+    const csv = `first_name,last_name,email,stage\nQuinn,Dale,quinn@example.com,proposal\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['stage']).toBe('PROPOSAL');
+  });
+
+  it('handles CLOSED_WON stage', () => {
+    const csv = `first_name,last_name,email,stage\nRay,Ford,ray@example.com,CLOSED_WON\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['stage']).toBe('CLOSED_WON');
+  });
+
+  it('handles CLOSED_LOST stage', () => {
+    const csv = `first_name,last_name,email,stage\nSue,Grant,sue@example.com,CLOSED_LOST\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['stage']).toBe('CLOSED_LOST');
+  });
+
+  it('handles CHURNED stage', () => {
+    const csv = `first_name,last_name,email,stage\nTom,Hall,tom@example.com,CHURNED\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['stage']).toBe('CHURNED');
+  });
+
+  it('sets empty tags array when tags column is absent', () => {
+    const csv = `first_name,last_name,email\nUma,Ivy,uma@example.com\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['tags']).toEqual([]);
+  });
+
+  it('parses tags comma-separated', () => {
+    const csv = `first_name,last_name,email,tags\nVic,Jones,vic@example.com,"vip, enterprise, saas"\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['tags']).toEqual(['vip', 'enterprise', 'saas']);
+  });
+
+  it('handles empty company field', () => {
+    const csv = `first_name,last_name,email,company\nWen,Kim,wen@example.com,\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['company']).toBeUndefined();
+  });
+
+  it('accepts alternative header names via field map', () => {
+    const csv = `firstname,surname,email_address\nXan,Lee,xan@example.com\n`;
+    const rows = parseCustomerCsv(Buffer.from(csv));
+    expect(rows[0]!['firstName']).toBe('Xan');
+    expect(rows[0]!['lastName']).toBe('Lee');
+    expect(rows[0]!['email']).toBe('xan@example.com');
+  });
+});
+
