@@ -4,6 +4,7 @@ import { ActivityType } from '../types/enums.js';
 export interface IActivity extends Document {
   investorId?: Types.ObjectId;
   partnerId?: Types.ObjectId;
+  customerId?: Types.ObjectId;
   type: ActivityType;
   detail?: string;
   createdAt: Date;
@@ -14,6 +15,7 @@ const activitySchema = new Schema<IActivity>(
   {
     investorId: { type: Schema.Types.ObjectId, ref: 'Investor' },
     partnerId: { type: Schema.Types.ObjectId, ref: 'Partner' },
+    customerId: { type: Schema.Types.ObjectId, ref: 'Customer' },
     type: { type: String, enum: Object.values(ActivityType), required: true },
     detail: { type: String },
   },
@@ -32,5 +34,6 @@ const activitySchema = new Schema<IActivity>(
 
 activitySchema.index({ investorId: 1, createdAt: -1 });
 activitySchema.index({ partnerId: 1, createdAt: -1 });
+activitySchema.index({ customerId: 1, createdAt: -1 });
 
 export const Activity = model<IActivity>('Activity', activitySchema);

@@ -59,7 +59,34 @@ FROM_NAME=CRM
 PORT=3001
 NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
+
+# First-run seed (optional — see "First User" section below)
+SEED_ADMIN_EMAIL=admin@example.com
+SEED_ADMIN_PASSWORD=changeme123
 ```
+
+### First User
+
+On startup the server checks whether any users exist in the database. If none are found **and** `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` are set in `.env`, it automatically creates an admin account with `mustChangePassword = true`.
+
+1. Add the two seed variables to your `.env`:
+
+   ```env
+   SEED_ADMIN_EMAIL=admin@example.com
+   SEED_ADMIN_PASSWORD=changeme123
+   ```
+
+2. Start the server (`npm run dev` or `npm start`). You will see in the logs:
+
+   ```
+   ✅ Seed admin created: admin@example.com (must change password on first login)
+   ```
+
+3. Log in via `POST /api/v1/auth/login` with those credentials. The response will include a JWT and the `mustChangePassword: true` flag — use `POST /api/v1/auth/change-password` to set a permanent password.
+
+4. Once at least one user exists the seed step is a no-op; you can remove the two env vars or leave them in place safely.
+
+> **Alternative:** call `POST /api/v1/auth/register` directly (no auth required) while the database is empty.
 
 ### Install & Run
 
@@ -117,6 +144,17 @@ All routes below are prefixed with `/api/v1`. Routes marked 🔒 require a `Bear
 | PUT | `/partners/:id` | 🔒 | Update partner |
 | DELETE | `/partners/:id` | 🔒 | Delete partner |
 | POST | `/partners/import` | 🔒 | Bulk import from CSV |
+
+### Customers
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/customers` | 🔒 | List all customers |
+| GET | `/customers/:id` | 🔒 | Get customer by ID |
+| POST | `/customers` | 🔒 | Create customer |
+| PUT | `/customers/:id` | 🔒 | Update customer |
+| DELETE | `/customers/:id` | 🔒 | Delete customer |
+| POST | `/customers/import` | 🔒 | Bulk import from CSV |
 
 ### Email
 

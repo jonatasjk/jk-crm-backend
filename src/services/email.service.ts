@@ -6,6 +6,7 @@ import { EmailLog } from '../models/EmailLog.js';
 import { Activity } from '../models/Activity.js';
 import { Investor } from '../models/Investor.js';
 import { Partner } from '../models/Partner.js';
+import { Customer } from '../models/Customer.js';
 import { Material } from '../models/Material.js';
 import type { SendEmailInput } from '../schemas/email.schema.js';
 
@@ -28,6 +29,11 @@ export async function sendEmail(input: SendEmailInput) {
     if (!investor) throw new Error('Not found');
     toEmail = investor.email;
     toName = `${investor.firstName} ${investor.lastName}`.trim();
+  } else if (input.entityType === EntityType.CUSTOMER) {
+    const customer = await Customer.findById(input.entityId);
+    if (!customer) throw new Error('Not found');
+    toEmail = customer.email;
+    toName = `${customer.firstName} ${customer.lastName}`.trim();
   } else {
     const partner = await Partner.findById(input.entityId);
     if (!partner) throw new Error('Not found');
@@ -62,7 +68,11 @@ export async function sendEmail(input: SendEmailInput) {
     subject,
     body,
     status: EmailStatus.PENDING,
-    ...(input.entityType === EntityType.INVESTOR ? { investorId: input.entityId } : { partnerId: input.entityId }),
+    ...(input.entityType === EntityType.INVESTOR
+      ? { investorId: input.entityId }
+      : input.entityType === EntityType.CUSTOMER
+        ? { customerId: input.entityId }
+        : { partnerId: input.entityId }),
     attachments: attachmentDocs,
   });
 
@@ -92,7 +102,9 @@ export async function sendEmail(input: SendEmailInput) {
       detail: `Email sent: "${subject}"`,
       ...(input.entityType === EntityType.INVESTOR
         ? { investorId: input.entityId }
-        : { partnerId: input.entityId }),
+        : input.entityType === EntityType.CUSTOMER
+          ? { customerId: input.entityId }
+          : { partnerId: input.entityId }),
     });
 
     return { success: true, messageId: data?.id, emailLogId: emailLog._id };
@@ -103,7 +115,10 @@ export async function sendEmail(input: SendEmailInput) {
 }
 
 export async function getEmailLogs(entityId: string, entityType: EntityType) {
-  const filter = entityType === EntityType.INVESTOR ? { investorId: entityId } : { partnerId: entityId };
+  const filter =
+    entityType === EntityType.INVESTOR ? { investorId: entityId } :
+    entityType === EntityType.CUSTOMER ? { customerId: entityId } :
+    { partnerId: entityId };
   return EmailLog.find(filter).sort({ createdAt: -1 }).limit(100).lean();
 }
 
@@ -115,22 +130,35 @@ export async function listAllEmailLogs(limit = 200) {
 
   const investorIds = [...new Set(logs.filter((l) => l.investorId).map((l) => String(l.investorId)))];
   const partnerIds  = [...new Set(logs.filter((l) => l.partnerId).map((l) => String(l.partnerId)))];
+  const customerIds = [...new Set(logs.filter((l) => l.customerId).map((l) => String(l.customerId)))];
 
   const { Investor } = await import('../models/Investor.js');
   const { Partner }  = await import('../models/Partner.js');
+  const { Customer } = await import('../models/Customer.js');
 
-  const [investors, partners] = await Promise.all([
+  const [investors, partners, customers] = await Promise.all([
     investorIds.length ? Investor.find({ _id: { $in: investorIds } }).select('firstName lastName email').lean() : [],
     partnerIds.length  ? Partner.find({ _id: { $in: partnerIds } }).select('firstName lastName email').lean() : [],
+    customerIds.length ? Customer.find({ _id: { $in: customerIds } }).select('firstName lastName email').lean() : [],
   ]);
 
-  const invMap = new Map(investors.map((i) => [String(i._id), i]));
-  const parMap = new Map(partners.map((p) => [String(p._id), p]));
+  const invMap  = new Map(investors.map((i) => [String(i._id), i]));
+  const parMap  = new Map(partners.map((p) => [String(p._id), p]));
+  const custMap = new Map(customers.map((c) => [String(c._id), c]));
 
   return logs.map((l) => {
-    const entityType = l.investorId ? 'INVESTOR' : 'PARTNER';
-    const entityId   = l.investorId ? String(l.investorId) : String(l.partnerId);
-    const entity     = l.investorId ? invMap.get(entityId) : parMap.get(entityId);
+    const entityType =
+      l.investorId ? 'INVESTOR' :
+      l.customerId  ? 'CUSTOMER' :
+      'PARTNER';
+    const entityId =
+      l.investorId ? String(l.investorId) :
+      l.customerId  ? String(l.customerId) :
+      String(l.partnerId);
+    const entity =
+      l.investorId ? invMap.get(entityId) :
+      l.customerId  ? custMap.get(entityId) :
+      parMap.get(entityId);
     return {
       ...l,
       id: String(l._id),
