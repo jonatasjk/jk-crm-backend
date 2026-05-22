@@ -205,3 +205,114 @@ describe('Partner routes', () => {
     expect(res.json().company).toBe('NewCo');
   });
 });
+
+// ─── Customer routes ──────────────────────────────────────────────────────────
+
+describe('Customer routes', () => {
+  let app: FastifyInstance;
+  let token: string;
+
+  beforeAll(async () => {
+    await connectTestDB();
+    app = await buildApp();
+    token = await getAuthToken(app);
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await disconnectTestDB();
+  });
+
+  beforeEach(async () => {
+    const mongoose = await import('mongoose');
+    const collections = mongoose.default.connection.collections;
+    for (const key of Object.keys(collections)) {
+      if (key !== 'users') await collections[key]!.deleteMany({});
+    }
+  });
+
+  const customerPayload = { firstName: 'Carol', lastName: 'Buyer', email: 'carol@customer.com' };
+
+  it('GET /customers returns 401 without auth', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/customers' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('POST /customers creates customer', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/customers',
+      headers: { authorization: `Bearer ${token}` },
+      payload: customerPayload,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().email).toBe('carol@customer.com');
+    expect(res.json().stage).toBe('LEAD');
+  });
+
+  it('GET /customers returns paginated list', async () => {
+    await app.inject({ method: 'POST', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` }, payload: customerPayload });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().total).toBe(1);
+  });
+
+  it('GET /customers/:id returns customer', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` }, payload: customerPayload });
+    const id = created.json().id;
+    const res = await app.inject({ method: 'GET', url: `/api/v1/customers/${id}`, headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().email).toBe('carol@customer.com');
+  });
+
+  it('GET /customers/:id returns 404 for unknown id', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/customers/000000000000000000000000', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('PUT /customers/:id updates customer', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` }, payload: customerPayload });
+    const id = created.json().id;
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/customers/${id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { company: 'NewCo' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().company).toBe('NewCo');
+  });
+
+  it('DELETE /customers/:id removes customer', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` }, payload: customerPayload });
+    const id = created.json().id;
+    const res = await app.inject({ method: 'DELETE', url: `/api/v1/customers/${id}`, headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('GET /customers supports search query', async () => {
+    await app.inject({ method: 'POST', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` }, payload: customerPayload });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/customers?search=Carol', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().total).toBe(1);
+  });
+
+  it('GET /customers filters by stage', async () => {
+    await app.inject({ method: 'POST', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` }, payload: customerPayload });
+    await app.inject({ method: 'POST', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` }, payload: { firstName: 'Won', lastName: 'Customer', email: 'won@customer.com', stage: 'CLOSED_WON' } });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/customers?stage=LEAD', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().total).toBe(1);
+  });
+
+  it('POST /customers returns 409 on duplicate email', async () => {
+    await app.inject({ method: 'POST', url: '/api/v1/customers', headers: { authorization: `Bearer ${token}` }, payload: customerPayload });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/customers',
+      headers: { authorization: `Bearer ${token}` },
+      payload: customerPayload,
+    });
+    expect(res.statusCode).toBe(409);
+  });
+});

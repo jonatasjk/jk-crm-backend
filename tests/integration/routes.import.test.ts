@@ -156,4 +156,85 @@ describe('CSV Import routes', () => {
       expect(res.statusCode).toBe(422);
     });
   });
+
+  // ─── Customer CSV import ───────────────────────────────────────────────
+
+  describe('POST /customers/import', () => {
+    it('imports valid customer CSV', async () => {
+      const csv = 'first_name,last_name,email\nNia,Brooks,nia@csv.com\nOscar,Webb,oscar@csv.com\n';
+      const { body, contentType } = makeMultipart('customers.csv', 'text/csv', csv);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/customers/import',
+        headers: { authorization: `Bearer ${token}`, 'content-type': contentType },
+        body,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().created).toBe(2);
+      expect(res.json().total).toBe(2);
+    });
+
+    it('updates existing customer on duplicate email', async () => {
+      // Pre-create one customer
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/customers',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { firstName: 'Nia', lastName: 'Brooks', email: 'nia@csv.com' },
+      });
+      expect(createRes.statusCode).toBe(201);
+
+      const csv = 'first_name,last_name,email,company\nNia,Brooks,nia@csv.com,BrooksCo\n';
+      const { body, contentType } = makeMultipart('customers.csv', 'text/csv', csv);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/customers/import',
+        headers: { authorization: `Bearer ${token}`, 'content-type': contentType },
+        body,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().updated).toBe(1);
+      expect(res.json().created).toBe(0);
+    });
+
+    it('returns 400 when no file uploaded', async () => {
+      const boundary = 'emptyboundary3';
+      const body = Buffer.from(`--${boundary}--`);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/customers/import',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body,
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('returns 422 for CSV with inconsistent columns', async () => {
+      const csv = 'first_name,last_name,email\nNia\n';
+      const { body, contentType } = makeMultipart('bad.csv', 'text/csv', csv);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/customers/import',
+        headers: { authorization: `Bearer ${token}`, 'content-type': contentType },
+        body,
+      });
+      expect(res.statusCode).toBe(422);
+    });
+
+    it('imports customers with CLOSED_WON stage', async () => {
+      const csv = 'first_name,last_name,email,stage\nPat,Clay,pat@csv.com,CLOSED_WON\n';
+      const { body, contentType } = makeMultipart('customers.csv', 'text/csv', csv);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/customers/import',
+        headers: { authorization: `Bearer ${token}`, 'content-type': contentType },
+        body,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().created).toBe(1);
+    });
+  });
 });
